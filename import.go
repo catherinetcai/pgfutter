@@ -2,13 +2,14 @@ package main
 
 import (
 	"database/sql"
+	"fmt"
 
 	"github.com/lib/pq"
 )
 
 type Import struct {
-	txn  *sql.Tx
-	stmt *sql.Stmt
+	txn   *sql.Tx
+	stmts []*sql.Stmt
 }
 
 func NewCSVImport(db *sql.DB, schema string, tableName string, columns []string) (*Import, error) {
@@ -48,30 +49,46 @@ func newImport(db *sql.DB, schema string, tableName string, columns []string) (*
 		return nil, err
 	}
 
-	stmt, err := txn.Prepare(pq.CopyInSchema(schema, tableName, columns...))
-	if err != nil {
-		return nil, err
+	// Chunk slices of 100s
+	var chunked [][]string
+	chunkSize := 100
+	for i := 0; i < len(columns); i += chunkSize {
+		end := i + chunkSize
+		if end > len(columns) {
+			end = len(columns)
+		}
+		chunked = append(chunked, columns[i:end])
+	}
+	var stmts []*sql.Stmt
+	for _, columns := range chunked {
+		stmt, err := txn.Prepare(pq.CopyInSchema(schema, tableName, columns...))
+		if err != nil {
+			fmt.Println(err)
+			continue
+		}
+		stmts = append(stmts, stmt)
 	}
 
-	return &Import{txn, stmt}, nil
+	return &Import{txn, stmts}, nil
 }
 
 func (i *Import) AddRow(columns ...interface{}) error {
-	_, err := i.stmt.Exec(columns...)
-	return err
+	for _, stmt := range i.stmts {
+		_, err := stmt.Exec(columns...)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (i *Import) Commit() error {
-
-	_, err := i.stmt.Exec()
-	if err != nil {
-		return err
+	for _, stmt := range i.stmts {
+		_, err := stmt.Exec()
+		if err != nil {
+			return err
+		}
+		_ = stmt.Close()
 	}
-
-	// Statement might already be closed
-	// therefore ignore errors
-	_ = i.stmt.Close()
-
 	return i.txn.Commit()
-
 }
