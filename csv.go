@@ -66,6 +66,7 @@ func copyCSVRows(i *Import, reader *csv.Reader, ignoreErrors bool, delimiter str
 
 			if ignoreErrors {
 				os.Stderr.WriteString(string(line))
+				fmt.Println("Error reading from CSV ", err.Error(), " ", line)
 				continue
 			} else {
 				err = errors.New(fmt.Sprintf("%s: %s", err, line))
@@ -79,6 +80,8 @@ func copyCSVRows(i *Import, reader *csv.Reader, ignoreErrors bool, delimiter str
 			cols[i] = col
 		}
 
+		//fmt.Println("Adding col ", cols)
+
 		err = i.AddRow(cols...)
 
 		if err != nil {
@@ -87,9 +90,11 @@ func copyCSVRows(i *Import, reader *csv.Reader, ignoreErrors bool, delimiter str
 
 			if ignoreErrors {
 				os.Stderr.WriteString(string(line))
+				fmt.Println("Error adding row... ", err.Error())
 				continue
 			} else {
 				err = errors.New(fmt.Sprintf("%s: %s", err, line))
+				fmt.Println("Error adding row... ", err.Error(), " line: ", line)
 				return err, success, failed
 			}
 		}
@@ -109,7 +114,7 @@ func importCSV(filename string, connStr string, schema string, tableName string,
 	defer db.Close()
 
 	var reader *csv.Reader
-	var bar *pb.ProgressBar 
+	var bar *pb.ProgressBar
 	if filename != "" {
 		file, err := os.Open(filename)
 		if err != nil {
